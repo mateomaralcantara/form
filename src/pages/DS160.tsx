@@ -1,41 +1,28 @@
 // src/pages/DS160.tsx
 import { useEffect, useMemo, useState } from 'react'
-<<<<<<< HEAD
 import { useLocation } from 'react-router-dom'
-=======
->>>>>>> b99c53b574ed1200ac9a10902dd4dcb2684eb116
 import { supabase } from '../lib/supabaseClient'
-import type { Section } from '../data/ds160'
+import type { Field, Section } from '../data/ds160'
 import { DS160_SECTIONS } from '../data/ds160'
 import FormField from '../components/FormField'
 import { exportDs160Pdf } from '../lib/pdf'
-<<<<<<< HEAD
 import Instructivo from '../components/Instructivo'
 
 type DraftState = Record<string, any>
 
-function evaluateCondition(condition: any, draft: DraftState) {
+function evaluateCondition(condition: Field['condition'], draft: DraftState) {
   if (!condition?.field) return true
 
   const value = draft[condition.field]
   const operator = condition.operator ?? 'equals'
 
-  if (operator === 'not_empty') {
-    return value !== undefined && value !== null && String(value).trim() !== ''
-  }
-
-  if (operator === 'empty') {
-    return value === undefined || value === null || String(value).trim() === ''
-  }
-
+  if (operator === 'not_empty') return value !== undefined && value !== null && String(value).trim() !== ''
+  if (operator === 'empty') return value === undefined || value === null || String(value).trim() === ''
   if (operator === 'includes') {
     if (Array.isArray(condition.value)) return condition.value.includes(value)
     return String(value ?? '').includes(String(condition.value ?? ''))
   }
-
-  if (operator === 'not_equals') {
-    return value !== condition.value
-  }
+  if (operator === 'not_equals') return value !== condition.value
 
   return value === condition.value
 }
@@ -52,17 +39,10 @@ function safeFileName(value: any) {
   )
 }
 
-=======
-import Instructivo from '../components/Instructivo' // 👈 añadido
-
-type DraftState = Record<string, any>
-
->>>>>>> b99c53b574ed1200ac9a10902dd4dcb2684eb116
 export default function DS160() {
   const [sectionIndex, setSectionIndex] = useState(0)
   const [saving, setSaving] = useState(false)
   const [draft, setDraft] = useState<DraftState>({})
-<<<<<<< HEAD
   const [savedAt, setSavedAt] = useState<string | null>(null)
 
   const loc = useLocation()
@@ -73,7 +53,7 @@ export default function DS160() {
   }, [sectionIndex])
 
   const visibleFields = useMemo(() => {
-    return section.fields.filter((field: any) => evaluateCondition(field.condition, draft))
+    return section.fields.filter((field) => evaluateCondition(field.condition, draft))
   }, [section, draft])
 
   const progress = useMemo(() => {
@@ -81,9 +61,9 @@ export default function DS160() {
   }, [sectionIndex])
 
   const answeredCount = useMemo(() => {
-    return Object.values(draft).filter((v) => {
-      if (v === undefined || v === null) return false
-      if (typeof v === 'string') return v.trim() !== ''
+    return Object.values(draft).filter((value) => {
+      if (value === undefined || value === null) return false
+      if (typeof value === 'string') return value.trim() !== ''
       return true
     }).length
   }, [draft])
@@ -159,94 +139,31 @@ export default function DS160() {
         Cédula: draft.cedula,
         Email: draft.correo,
         Teléfono: draft.primaryPhone || draft.telefono,
-=======
-
-  const section = useMemo<Section>(() => DS160_SECTIONS[sectionIndex], [sectionIndex])
-
-  // Carga/Auto-guardado local
-  useEffect(() => {
-    const saved = localStorage.getItem('fp_ds160_draft')
-    if (saved) {
-      try { setDraft(JSON.parse(saved)) } catch {}
-    }
-  }, [])
-  useEffect(() => {
-    localStorage.setItem('fp_ds160_draft', JSON.stringify(draft))
-  }, [draft])
-
-  function updateField(name: string, value: any) {
-    setDraft(prev => ({ ...prev, [name]: value }))
-  }
-
-  // ---------- UTIL: Exportar PDF
-  function handleExportPdf() {
-    const fileSafe = (s: any) => (String(s || '').trim().replace(/\s+/g, '_') || 'sin_nombre')
-    const nombre = fileSafe(draft['nombres'])
-    const apellidos = fileSafe(draft['apellidos'])
-    const fileName = `ds160_${apellidos}_${nombre}.pdf`
-
-    exportDs160Pdf(draft, {
-      fileName,
-      title: 'FORM Premium — DS-160 (RD) — Preguntas y Respuestas',
-      meta: {
-        Nombre: draft['nombres'],
-        Apellidos: draft['apellidos'],
-        Pasaporte: draft['numeroPasaporte'],
-        Cédula: draft['cedula'],
->>>>>>> b99c53b574ed1200ac9a10902dd4dcb2684eb116
       },
     })
   }
 
-<<<<<<< HEAD
   async function guardarEnSupabase() {
     setSaving(true)
 
     try {
-      const { error } = await supabase
-        .from('form_responses')
-        .insert([
-          {
-            form_key: 'ds160-do',
-            data: draft,
-            source: 'web',
-            user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : null,
-          },
-        ])
+      const { error } = await supabase.from('form_responses').insert([
+        {
+          form_key: 'ds160-do',
+          data: draft,
+          source: 'web',
+          user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : null,
+        },
+      ])
 
       if (error) throw error
 
       alert('✅ Guardado correctamente. Se descargará el PDF.')
       handleExportPdf()
-    } catch (e: any) {
-      const msg = e?.message || e?.error_description || e?.hint || 'desconocido'
-      console.error('Error guardando en Supabase:', e)
+    } catch (error: any) {
+      const msg = error?.message || error?.error_description || error?.hint || 'desconocido'
+      console.error('Error guardando en Supabase:', error)
       alert('Error guardando: ' + msg)
-=======
-  // ---------- GUARDAR EN SUPABASE (+ descarga automática)
-  async function guardarEnSupabase() {
-    setSaving(true)
-    try {
-      // ⚠️ Evitamos .select() para no forzar return=representation (que choca con RLS).
-      // Algunas versiones de supabase-js no tipan 'returning', así que casteamos el options a any.
-      const { error } = await supabase
-        .from('form_responses')
-        // @ts-expect-error for older supabase-js types
-        .insert([{ form_key: 'ds160-do', data: draft }], { returning: 'minimal' } as any)
-
-      if (error) throw error
-
-      alert('✅ Guardado en Supabase.')
-      handleExportPdf() // descarga automática
-    } catch (e: any) {
-      const msg = e?.message || e?.error_description || e?.hint || 'desconocido'
-      console.error('Error guardando en Supabase:', e)
-      if (String(msg).includes('schema cache') || e?.code === 'PGRST205') {
-        alert('Error guardando: el esquema REST no está actualizado. En Supabase ejecuta: notify pgrst, \'reload schema\'; y verifica en Settings → API que "public" esté expuesto.')
-      } else {
-        alert('Error guardando: ' + msg)
-      }
->>>>>>> b99c53b574ed1200ac9a10902dd4dcb2684eb116
     } finally {
       setSaving(false)
     }
@@ -257,7 +174,6 @@ export default function DS160() {
       <div className="row">
         <div className="col-12">
           <div className="card">
-<<<<<<< HEAD
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
               <div>
                 <h2 style={{ margin: '4px 0' }}>DS-160 RD — Borrador profesional</h2>
@@ -332,14 +248,14 @@ export default function DS160() {
                 </div>
 
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  {DS160_SECTIONS.map((s, idx) => (
+                  {DS160_SECTIONS.map((item, index) => (
                     <button
-                      key={s.key}
-                      className={`btn ${idx === sectionIndex ? 'primary' : 'ghost'}`}
-                      onClick={() => goToSection(idx)}
+                      key={item.key}
+                      className={`btn ${index === sectionIndex ? 'primary' : 'ghost'}`}
+                      onClick={() => goToSection(index)}
                       type="button"
                     >
-                      {idx + 1}. {s.title}
+                      {index + 1}. {item.title}
                     </button>
                   ))}
                 </div>
@@ -351,68 +267,15 @@ export default function DS160() {
               {section.description && <p className="muted">{section.description}</p>}
 
               <div className="row" style={{ marginTop: 12 }}>
-                {visibleFields.map((field: any) => (
+                {visibleFields.map((field) => (
                   <FormField
                     key={field.name}
-                    field={field}
+                    field={field as any}
                     value={draft[field.name]}
-=======
-            <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', gap:12}}>
-              <div>
-                <h2 style={{margin:'4px 0'}}>DS-160 (RD) — Borrador</h2>
-                <p className="muted" style={{marginTop:4}}>
-                  Campos 100% opcionales{' '}
-                  <a href="https://ceac.state.gov/CEAC" target="_blank" rel="noreferrer">
-                    (el envío oficial es en CEAC)
-                  </a>.
-                </p>
-              </div>
-              <div style={{display:'flex', gap:8, flexWrap:'wrap'}}>
-                <button
-                  className="btn"
-                  onClick={() => setSectionIndex(Math.max(0, sectionIndex - 1))}
-                  disabled={sectionIndex === 0}
-                >
-                  Atrás
-                </button>
-                <button
-                  className="btn"
-                  onClick={() => setSectionIndex(Math.min(DS160_SECTIONS.length - 1, sectionIndex + 1))}
-                  disabled={sectionIndex === DS160_SECTIONS.length - 1}
-                >
-                  Siguiente
-                </button>
-
-                {/* Opción 2 (AUTOMÁTICA): Guardar + descargar PDF */}
-                <button className="btn success" onClick={guardarEnSupabase} disabled={saving}>
-                  {saving ? 'Guardando…' : 'Guardar (y descargar PDF)'}
-                </button>
-
-                {/* Opción 1 (MANUAL): Solo descargar PDF sin guardar */}
-                <button className="btn" onClick={handleExportPdf}>
-                  Descargar PDF
-                </button>
-              </div>
-            </div>
-
-            {/* 👇 Instructivo arriba del formulario */}
-            <Instructivo />
-
-            <div style={{marginTop:18}}>
-              <div className="section-title">{section.title}</div>
-              {section.description && <p className="muted">{section.description}</p>}
-              <div className="row" style={{marginTop:12}}>
-                {section.fields.map(f => (
-                  <FormField
-                    key={f.name}
-                    field={f as any}
-                    value={draft[f.name]}
->>>>>>> b99c53b574ed1200ac9a10902dd4dcb2684eb116
                     onChange={updateField}
                   />
                 ))}
               </div>
-<<<<<<< HEAD
 
               {visibleFields.length === 0 && (
                 <p className="muted" style={{ marginTop: 12 }}>
@@ -439,21 +302,9 @@ export default function DS160() {
                 </pre>
               </details>
             )}
-=======
-            </div>
-
-            <details style={{marginTop:18}}>
-              <summary className="muted">Ver JSON del borrador (local)</summary>
-              <pre style={{whiteSpace:'pre-wrap', overflowX:'auto'}}>{JSON.stringify(draft, null, 2)}</pre>
-            </details>
->>>>>>> b99c53b574ed1200ac9a10902dd4dcb2684eb116
           </div>
         </div>
       </div>
     </div>
   )
-<<<<<<< HEAD
 }
-=======
-}
->>>>>>> b99c53b574ed1200ac9a10902dd4dcb2684eb116

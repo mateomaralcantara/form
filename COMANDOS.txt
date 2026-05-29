@@ -1,0 +1,18 @@
+cd C:\Users\martin\Desktop\VSC\APS\form\form
+
+# Copia los archivos del ZIP encima de los actuales:
+# src/pages/DS160.tsx
+# src/pages/Home.tsx
+# src/lib/supabaseClient.ts
+# src/data/ds160.ts
+
+# Verifica que ya no hay conflictos:
+Select-String -Path .\src\*.tsx,.\src\**\*.tsx,.\src\**\*.ts,.\package.json,.\README.md,.\.env.example -Pattern "<<<<<<<|=======|>>>>>>>"
+
+# Compila:
+npm run build
+
+# Sube:
+git add -A
+git commit -m "fix: limpiar conflictos de merge y restaurar DS160"
+git push origin main

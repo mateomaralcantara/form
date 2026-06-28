@@ -1,30 +1,61 @@
 // src/pages/DS160.tsx
 import { useEffect, useMemo, useState } from 'react'
-import { useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
 import type { Field, Section } from '../data/ds160'
 import { DS160_SECTIONS } from '../data/ds160'
 import FormField from '../components/FormField'
 import { exportDs160Pdf } from '../lib/pdf'
-import Instructivo from '../components/Instructivo'
 
 type DraftState = Record<string, any>
 
-function evaluateCondition(condition: Field['condition'], draft: DraftState) {
+/*
+ * Ocultamos la sección inicial application_start.
+ * El formulario comienza directamente en Datos personales.
+ */
+const FORM_SECTIONS = DS160_SECTIONS.filter(
+  (section) => section.key !== 'application_start'
+)
+
+function evaluateCondition(
+  condition: Field['condition'],
+  draft: DraftState
+) {
   if (!condition?.field) return true
 
-  const value = draft[condition.field]
+  const currentValue = draft[condition.field]
   const operator = condition.operator ?? 'equals'
 
-  if (operator === 'not_empty') return value !== undefined && value !== null && String(value).trim() !== ''
-  if (operator === 'empty') return value === undefined || value === null || String(value).trim() === ''
-  if (operator === 'includes') {
-    if (Array.isArray(condition.value)) return condition.value.includes(value)
-    return String(value ?? '').includes(String(condition.value ?? ''))
+  if (operator === 'not_empty') {
+    return (
+      currentValue !== undefined &&
+      currentValue !== null &&
+      String(currentValue).trim() !== ''
+    )
   }
-  if (operator === 'not_equals') return value !== condition.value
 
-  return value === condition.value
+  if (operator === 'empty') {
+    return (
+      currentValue === undefined ||
+      currentValue === null ||
+      String(currentValue).trim() === ''
+    )
+  }
+
+  if (operator === 'includes') {
+    if (Array.isArray(condition.value)) {
+      return condition.value.includes(currentValue)
+    }
+
+    return String(currentValue ?? '').includes(
+      String(condition.value ?? '')
+    )
+  }
+
+  if (operator === 'not_equals') {
+    return currentValue !== condition.value
+  }
+
+  return currentValue === condition.value
 }
 
 function safeFileName(value: any) {
@@ -43,127 +74,168 @@ export default function DS160() {
   const [sectionIndex, setSectionIndex] = useState(0)
   const [saving, setSaving] = useState(false)
   const [draft, setDraft] = useState<DraftState>({})
-  const [savedAt, setSavedAt] = useState<string | null>(null)
-
-  const loc = useLocation()
-  const isEmbed = new URLSearchParams(loc.search).get('embed') === '1'
 
   const section = useMemo<Section>(() => {
-    return DS160_SECTIONS[Math.min(sectionIndex, DS160_SECTIONS.length - 1)]
+    return FORM_SECTIONS[
+      Math.min(sectionIndex, FORM_SECTIONS.length - 1)
+    ]
   }, [sectionIndex])
 
   const visibleFields = useMemo(() => {
-    return section.fields.filter((field) => evaluateCondition(field.condition, draft))
+    return section.fields.filter((field) =>
+      evaluateCondition(field.condition, draft)
+    )
   }, [section, draft])
 
-  const progress = useMemo(() => {
-    return Math.round(((sectionIndex + 1) / DS160_SECTIONS.length) * 100)
-  }, [sectionIndex])
-
-  const answeredCount = useMemo(() => {
-    return Object.values(draft).filter((value) => {
-      if (value === undefined || value === null) return false
-      if (typeof value === 'string') return value.trim() !== ''
-      return true
-    }).length
-  }, [draft])
-
+  /*
+   * Cargar borrador guardado en este navegador.
+   */
   useEffect(() => {
-    const saved = localStorage.getItem('fp_ds160_draft')
-    if (saved) {
-      try {
-        setDraft(JSON.parse(saved))
-      } catch {
-        localStorage.removeItem('fp_ds160_draft')
-      }
-    }
+    const savedDraft = localStorage.getItem('fp_ds160_draft')
 
-    const lastSaved = localStorage.getItem('fp_ds160_saved_at')
-    if (lastSaved) setSavedAt(lastSaved)
+    if (!savedDraft) return
+
+    try {
+      setDraft(JSON.parse(savedDraft))
+    } catch {
+      localStorage.removeItem('fp_ds160_draft')
+    }
   }, [])
 
+  /*
+   * Autoguardado local silencioso.
+   */
   useEffect(() => {
-    localStorage.setItem('fp_ds160_draft', JSON.stringify(draft))
-    const now = new Date().toLocaleString()
-    localStorage.setItem('fp_ds160_saved_at', now)
-    setSavedAt(now)
+    localStorage.setItem(
+      'fp_ds160_draft',
+      JSON.stringify(draft)
+    )
   }, [draft])
 
   function updateField(name: string, value: any) {
-    setDraft((prev) => ({ ...prev, [name]: value }))
+    setDraft((previousDraft) => ({
+      ...previousDraft,
+      [name]: value,
+    }))
   }
 
-  function goPrev() {
-    setSectionIndex((current) => Math.max(0, current - 1))
-    window.scrollTo({ top: 0, behavior: 'smooth' })
+  function goBack() {
+    setSectionIndex((currentIndex) =>
+      Math.max(0, currentIndex - 1)
+    )
+
+    window.scrollTo({
+      top: 0,
+      behavior: 'smooth',
+    })
   }
 
   function goNext() {
-    setSectionIndex((current) => Math.min(DS160_SECTIONS.length - 1, current + 1))
-    window.scrollTo({ top: 0, behavior: 'smooth' })
-  }
-
-  function goToSection(index: number) {
-    setSectionIndex(Math.min(Math.max(index, 0), DS160_SECTIONS.length - 1))
-    window.scrollTo({ top: 0, behavior: 'smooth' })
-  }
-
-  function clearDraft() {
-    const ok = confirm(
-      '¿Seguro que deseas limpiar todo el formulario local? Esta acción no borra registros ya enviados a Supabase.'
+    setSectionIndex((currentIndex) =>
+      Math.min(
+        FORM_SECTIONS.length - 1,
+        currentIndex + 1
+      )
     )
 
-    if (!ok) return
+    window.scrollTo({
+      top: 0,
+      behavior: 'smooth',
+    })
+  }
+
+  function clearForm() {
+    const confirmed = window.confirm(
+      '¿Seguro que desea borrar todos los datos escritos en este formulario?'
+    )
+
+    if (!confirmed) return
 
     setDraft({})
-    localStorage.removeItem('fp_ds160_draft')
-    localStorage.removeItem('fp_ds160_saved_at')
-    setSavedAt(null)
     setSectionIndex(0)
+
+    localStorage.removeItem('fp_ds160_draft')
+
+    window.scrollTo({
+      top: 0,
+      behavior: 'smooth',
+    })
   }
 
   function handleExportPdf() {
-    const nombre = safeFileName(draft.nombres)
+    const nombres = safeFileName(draft.nombres)
     const apellidos = safeFileName(draft.apellidos)
-    const pasaporte = safeFileName(draft.numeroPasaporte)
-    const stamp = new Date().toISOString().slice(0, 10)
-    const fileName = `ds160_${apellidos}_${nombre}_${pasaporte}_${stamp}.pdf`
+    const pasaporte = safeFileName(
+      draft.numeroPasaporte
+    )
+
+    const currentDate = new Date()
+      .toISOString()
+      .slice(0, 10)
+
+    const fileName =
+      `ds160_${apellidos}_${nombres}_${pasaporte}_${currentDate}.pdf`
 
     exportDs160Pdf(draft, {
       fileName,
-      title: 'FORM Premium — DS-160 RD — Preguntas y Respuestas',
+      title:
+        'FORM Premium — DS-160 RD — Preguntas y Respuestas',
       meta: {
         Nombre: draft.nombres,
         Apellidos: draft.apellidos,
         Pasaporte: draft.numeroPasaporte,
         Cédula: draft.cedula,
         Email: draft.correo,
-        Teléfono: draft.primaryPhone || draft.telefono,
+        Teléfono:
+          draft.primaryPhone ||
+          draft.telefono,
       },
     })
   }
 
-  async function guardarEnSupabase() {
+  /*
+   * Guarda en Supabase y luego descarga el PDF.
+   *
+   * No usamos .select() porque el visitante tiene permiso
+   * para insertar, pero no para leer respuestas.
+   */
+  async function guardarYDescargarPdf() {
+    if (saving) return
+
     setSaving(true)
 
     try {
-      const { error } = await supabase.from('form_responses').insert([
-        {
-          form_key: 'ds160-do',
-          data: draft,
-          source: 'web',
-          user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : null,
-        },
-      ])
+      const { error } = await supabase
+        .from('form_responses')
+        .insert([
+          {
+            form_key: 'ds160-do',
+            data: draft,
+          },
+        ])
 
       if (error) throw error
 
-      alert('✅ Guardado correctamente. Se descargará el PDF.')
       handleExportPdf()
+
+      window.alert(
+        '✅ Formulario guardado correctamente. El PDF fue descargado.'
+      )
     } catch (error: any) {
-      const msg = error?.message || error?.error_description || error?.hint || 'desconocido'
-      console.error('Error guardando en Supabase:', error)
-      alert('Error guardando: ' + msg)
+      console.error(
+        'Error guardando en Supabase:',
+        error
+      )
+
+      const message =
+        error?.message ||
+        error?.error_description ||
+        error?.hint ||
+        'Error desconocido'
+
+      window.alert(
+        'Error guardando: ' + message
+      )
     } finally {
       setSaving(false)
     }
@@ -174,134 +246,99 @@ export default function DS160() {
       <div className="row">
         <div className="col-12">
           <div className="card">
-            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-              <div>
-                <h2 style={{ margin: '4px 0' }}>DS-160 RD — Borrador profesional</h2>
+            {/* Encabezado simple */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 12,
+                flexWrap: 'wrap',
+              }}
+            >
+              <h2 style={{ margin: 0 }}>
+                FORM Premium — DS-160 RD
+              </h2>
 
-                {!isEmbed && (
-                  <p className="muted" style={{ marginTop: 4, maxWidth: 760 }}>
-                    Formulario de recopilación no oficial. Campos opcionales. El envío oficial debe realizarse en{' '}
-                    <a href="https://ceac.state.gov/CEAC" target="_blank" rel="noreferrer">
-                      CEAC
-                    </a>.
-                  </p>
-                )}
-
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
-                  <span className="pill">Sección {sectionIndex + 1} de {DS160_SECTIONS.length}</span>
-                  <span className="pill">{progress}% completado</span>
-                  <span className="pill">{answeredCount} campos llenados</span>
-                  {savedAt && <span className="pill">Autoguardado: {savedAt}</span>}
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                <button className="btn" onClick={goPrev} disabled={sectionIndex === 0}>
+              <div
+                style={{
+                  display: 'flex',
+                  gap: 8,
+                  flexWrap: 'wrap',
+                }}
+              >
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={goBack}
+                  disabled={sectionIndex === 0}
+                >
                   Atrás
                 </button>
 
-                <button className="btn" onClick={goNext} disabled={sectionIndex === DS160_SECTIONS.length - 1}>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={goNext}
+                  disabled={
+                    sectionIndex ===
+                    FORM_SECTIONS.length - 1
+                  }
+                >
                   Siguiente
                 </button>
 
-                <button className="btn success" onClick={guardarEnSupabase} disabled={saving}>
-                  {saving ? 'Guardando…' : 'Guardar y descargar PDF'}
+                <button
+                  type="button"
+                  className="btn success"
+                  onClick={guardarYDescargarPdf}
+                  disabled={saving}
+                >
+                  {saving
+                    ? 'Guardando…'
+                    : 'Guardar PDF'}
                 </button>
 
-                <button className="btn" onClick={handleExportPdf}>
-                  Descargar PDF
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={handleExportPdf}
+                  disabled={saving}
+                >
+                  Descargar
                 </button>
 
-                {!isEmbed && (
-                  <button className="btn ghost" onClick={clearDraft} disabled={saving}>
-                    Limpiar
-                  </button>
-                )}
+                <button
+                  type="button"
+                  className="btn ghost"
+                  onClick={clearForm}
+                  disabled={saving}
+                >
+                  Limpiar
+                </button>
               </div>
             </div>
 
-            <div
-              style={{
-                marginTop: 14,
-                height: 10,
-                borderRadius: 999,
-                border: '1px solid var(--border)',
-                overflow: 'hidden',
-                background: 'rgba(255,255,255,0.04)',
-              }}
-            >
+            {/* Sección y preguntas */}
+            <div style={{ marginTop: 22 }}>
+              <div className="section-title">
+                {section.title}
+              </div>
+
               <div
-                style={{
-                  height: '100%',
-                  width: `${progress}%`,
-                  background: 'linear-gradient(135deg, var(--brand), var(--brand-2))',
-                }}
-              />
-            </div>
-
-            <Instructivo />
-
-            {!isEmbed && (
-              <div className="card" style={{ marginTop: 16, padding: 12 }}>
-                <div className="muted" style={{ marginBottom: 8 }}>
-                  Navegación rápida por secciones
-                </div>
-
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  {DS160_SECTIONS.map((item, index) => (
-                    <button
-                      key={item.key}
-                      className={`btn ${index === sectionIndex ? 'primary' : 'ghost'}`}
-                      onClick={() => goToSection(index)}
-                      type="button"
-                    >
-                      {index + 1}. {item.title}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div style={{ marginTop: 18 }}>
-              <div className="section-title">{section.title}</div>
-              {section.description && <p className="muted">{section.description}</p>}
-
-              <div className="row" style={{ marginTop: 12 }}>
+                className="row"
+                style={{ marginTop: 14 }}
+              >
                 {visibleFields.map((field) => (
                   <FormField
                     key={field.name}
-                    field={field as any}
+                    field={field}
                     value={draft[field.name]}
                     onChange={updateField}
                   />
                 ))}
               </div>
-
-              {visibleFields.length === 0 && (
-                <p className="muted" style={{ marginTop: 12 }}>
-                  No hay campos visibles en esta sección por las condiciones actuales.
-                </p>
-              )}
             </div>
-
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap', marginTop: 20 }}>
-              <button className="btn" onClick={goPrev} disabled={sectionIndex === 0}>
-                Atrás
-              </button>
-
-              <button className="btn" onClick={goNext} disabled={sectionIndex === DS160_SECTIONS.length - 1}>
-                Siguiente
-              </button>
-            </div>
-
-            {!isEmbed && (
-              <details style={{ marginTop: 18 }}>
-                <summary className="muted">Ver JSON del borrador local</summary>
-                <pre style={{ whiteSpace: 'pre-wrap', overflowX: 'auto' }}>
-                  {JSON.stringify(draft, null, 2)}
-                </pre>
-              </details>
-            )}
           </div>
         </div>
       </div>
